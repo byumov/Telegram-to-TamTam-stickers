@@ -9,7 +9,7 @@ setup(
         "webp==0.1.3",
         "pillow==8.4.0",
         "requests==2.25.1",
-        "aiohttp==3.7.4.post0",
+        "aiohttp==3.7.4",
     ],
     package_dir={"": "src"},
     author='Ivan Buymov',
