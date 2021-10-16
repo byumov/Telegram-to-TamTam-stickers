@@ -6,8 +6,7 @@ from time import sleep
 import requests
 from aiohttp import web
 
-from TelegramStickerDownloader import (StickersSetNotFoundException,
-                                       TGStickerDownloader)
+from .TelegramStickerDownloader import (StickersSetNotFoundException, TGStickerDownloader)
 
 
 @dataclass
