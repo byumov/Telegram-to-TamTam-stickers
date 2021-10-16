@@ -2,6 +2,7 @@
 import logging
 from dataclasses import dataclass
 from time import sleep
+import os
 
 import requests
 from aiohttp import web
@@ -109,20 +110,12 @@ class TamTamBot():
         self.log.debug("upload url: %s", res)
         return res['url']
 
-    # def wait_for_upload_compleate(self, upload_url):
-    #     while True:
-    #         res = requests.get(upload_url)
-    #         print(res.text)
-    #         sleep(1)
-
-
     def upload_file(self, file_path: str) -> UploadResult:
         upload_url = self.get_upload_url()
         with open(file_path,'rb') as fb:
             file_to_upload = {'file': (f'{file_path.split("/")[-1]}', fb, 'multipart/form-data')}
             res = requests.post(upload_url, files=file_to_upload).json()
-
-        # self.wait_for_upload_compleate(upload_url)
+            os.remove(file_path)
         return UploadResult(res['fileId'], res['token'])
 
 
@@ -139,6 +132,8 @@ class TamTamBot():
             data['attachments'].append(attach)
 
         not_ok = True
+        max_tries = 5
+        sleep_time = 1
         while not_ok:
             res = requests.post(f"{self.base_url}/messages", json=data, params=param)
             self.log.info("sending msg to user %s: %s", user_id, text)
@@ -150,10 +145,17 @@ class TamTamBot():
             # Try to send a message again until you'll get a successful result.
             if res.status_code == 400 and "file.not.processed" in res.json()["message"]:
                 self.log.debug("sleep and retry...")
-                sleep(1)
+                sleep(sleep_time)
+                max_tries -= 1
+                sleep_time += 1
+                if max_tries == 0:
+                    self.send_message(user_id, "Не получилось загрузить файл в ТамТам, попробуйте еще раз позже")
+                    web.Response()
                 continue
-            elif res.status_code != 200:
+
+            if res.status_code != 200:
                 self.log.error("can't send msg to user %s, statis: %s %s", user_id, res.status_code, res.text)
+
         self.log.debug("msg was sent")
 
     def run(self):
