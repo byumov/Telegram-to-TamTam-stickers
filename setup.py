@@ -1,6 +1,22 @@
+import codecs
+import os.path
 from setuptools import setup, find_packages
+
 PKG_NAME = 'tg_to_tt_stickers'
 
+def read(rel_path):
+    here = os.path.abspath(os.path.dirname(__file__))
+    with codecs.open(os.path.join(here, rel_path), 'r') as fp:
+        return fp.read()
+
+# https://packaging.python.org/guides/single-sourcing-package-version/
+def get_version(rel_path):
+    for line in read(rel_path).splitlines():
+        if line.startswith('__version__'):
+            delim = '"' if '"' in line else "'"
+            return line.split(delim)[1]
+    else:
+        raise RuntimeError("Unable to find version string.")
 
 setup(
     name=PKG_NAME,
@@ -14,7 +30,7 @@ setup(
     package_dir={"": "src"},
     author='Ivan Buymov',
     author_email='ivan@buymov.ru',
-    version="0.0.1",
+    version=get_version(f"src/{PKG_NAME}/__init__.py"),
     entry_points = {
         'console_scripts': ['tg-to-tt-bot=tg_to_tt_stickers.run:run'],
     },
