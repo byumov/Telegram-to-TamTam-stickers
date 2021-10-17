@@ -2,6 +2,7 @@ import logging
 from dataclasses import dataclass
 from time import sleep
 import os
+from typing import List
 
 import requests
 from aiohttp import web
@@ -73,16 +74,19 @@ class TamTamBot():
             self.send_message(update.sender_id, text)
             return web.Response()
 
-        zip_name = self.tg_client.create_tamtam_zip(update.message_text)
+        zip_names = self.tg_client.create_tamtam_zip(update.message_text)
 
         #  send zip to user
-        zip_file = self.upload_file(zip_name)
-        attach = {
-            "type": "file",
-            "payload": {
-                "token": zip_file.token
-            }
-        }
+        zip_files = self.upload_files(zip_names)
+        attachments = []
+        for zip_file in zip_files:
+            attachments.append({
+                "type": "file",
+                "payload": {
+                    "token": zip_file.token
+                }
+            })
+
         text = "Готово 🥳\nЧтобы загрузить пак в ТамТам надо еще немного покликать:\n" \
                 "Пишем боту в одноклассниках(ссылки в ТТ на него нет 🤷‍♂️): https://ok.ru/okstickers\n" \
                 "Делаем все по инструкции от бота okstickers. Примерно так:\n" \
@@ -97,7 +101,15 @@ class TamTamBot():
                 "Скорее же отправьте стикер в любой чат! После этого, можно открыть эту периписку в ТТ" \
                 " и оттуда добавить пак в ТТ. Такие дела. Вот теперь все, можно загружать следующий 🙂"
 
-        self.send_message(update.sender_id, text, attach=attach)
+        if len(attachments) == 1:
+            self.send_message(update.sender_id, text, attachments=attachments)
+        else:
+            self.send_message(update.sender_id, text)
+            self.send_message(update.sender_id, "Тебе не певезло, в Telegram паке больше 50-ти стикеров.\n"\
+                "ТамТам не разрешает загрузить в одном архиве больше 50 штук.\n"
+                "Я пришлю несколько архивов, их нужно будет отправить okstickers боту по очереди, когда он скажет, что переварил первый кусок")
+            for attach in attachments:
+                self.send_message(update.sender_id, "", attachments=[attach])
 
         return web.Response()
 
@@ -112,25 +124,29 @@ class TamTamBot():
         self.log.debug("upload url: %s", res)
         return res['url']
 
-    def upload_file(self, file_path: str) -> UploadResult:
-        upload_url = self.get_upload_url()
-        with open(file_path,'rb') as fb:
-            file_to_upload = {'file': (f'{file_path.split("/")[-1]}', fb, 'multipart/form-data')}
-            res = requests.post(upload_url, files=file_to_upload).json()
-            os.remove(file_path)
-        return UploadResult(res['fileId'], res['token'])
+    def upload_files(self, file_paths: List[str]) -> List[UploadResult]:
+        upload_results = []
+        for file_path in file_paths:
+            upload_url = self.get_upload_url()
+            with open(file_path,'rb') as fb:
+                file_to_upload = {'file': (f'{file_path.split("/")[-1]}', fb, 'multipart/form-data')}
+                res = requests.post(upload_url, files=file_to_upload).json()
+                os.remove(file_path)
+                upload_results.append(UploadResult(res['fileId'], res['token']))
+        return upload_results
 
 
-    def send_message(self, user_id: int, text: str, attach: dict=None):
+    def send_message(self, user_id: int, text: str, attachments: list=None, no_link_preview=True):
         param = {
             "access_token": self.token,
-            "user_id": user_id
+            "user_id": user_id,
+            "disable_link_preview": no_link_preview
         }
         data = {
             "text": text
         }
-        if attach is not None:
-            data['attachments'] = [attach]
+        if attachments is not None:
+            data['attachments'] = attachments
 
         not_ok = True
         max_tries = 5

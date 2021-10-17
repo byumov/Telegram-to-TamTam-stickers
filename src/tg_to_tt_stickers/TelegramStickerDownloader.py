@@ -90,20 +90,32 @@ class TGStickerDownloader:
         else:
             raise TGStickerDownloaderException(f"telegram API error, status code: {resp.status_code}, text: {resp.text}")
 
+    @classmethod
+    def chunks(cls, lst, n):
+        """Yield successive n-sized chunks from lst."""
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n]
 
-    def create_tamtam_zip(self, tg_set_name: str) -> str:
+    def create_tamtam_zip(self, tg_set_name: str) -> 'List[str]':
         """return path to zip archive with stickers in TamTam format"""
         s_set = self.get_sticker_pack_by_name(tg_set_name)
         p = Pool(10)
         result_files = []  # type: List[str]
         with TemporaryDirectory(suffix=s_set.name) as tmpdir:
             p.starmap(self.proceed_sticker,  [(x, tmpdir, s_set.name, result_files) for x in s_set.stickers])
-            zip_name = f"{s_set.name}.zip"
-            with zipfile.ZipFile(zip_name, "w") as zf:
-                for sticker_file in result_files:
-                    self.log.debug("add to archive: %s", sticker_file)
-                    zf.write(sticker_file, arcname=sticker_file.split("/")[-1])
-        return zip_name
+            result_zip_names = []
+
+            parts = self.chunks(result_files, 50)
+            part_n = 0
+            for part in parts:
+                zip_name = f"{s_set.name}_{part_n}.zip"
+                part_n += 1
+                with zipfile.ZipFile(zip_name, "w") as zf:
+                    for sticker_file in part:
+                        self.log.debug("add to archive: %s", sticker_file)
+                        zf.write(sticker_file, arcname=sticker_file.split("/")[-1])
+                    result_zip_names.append(zip_name)
+        return result_zip_names
 
 
     def proceed_sticker(self, sticker: Sticker, tmp_dir : str, pack_name : str, result: list):
