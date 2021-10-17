@@ -3,6 +3,7 @@ from tempfile import NamedTemporaryFile
 
 from PIL import Image
 
+TAMTAM_STICKER_SIZE = (512, 512)
 
 class ImageConverter:
     """convert images to TamTam format"""
@@ -16,7 +17,7 @@ class ImageConverter:
 
         img = Image.open(BytesIO(img_bytes))
 
-        # fill to 512x512
+        # fill to TAMTAM_STICKER_SIZE
         x, y = img.size
         size = max(x, y)
         new_im = Image.new('RGBA', (size, size), (0, 0, 0, 0))
@@ -25,7 +26,7 @@ class ImageConverter:
         # convert to png
         with NamedTemporaryFile() as tmp_f:
             new_im.convert("RGB")
-            new_im.thumbnail((512, 512), Image.ANTIALIAS)
+            new_im.thumbnail(TAMTAM_STICKER_SIZE, Image.ANTIALIAS)
             new_im.save(tmp_f.name, "png")
             with open(tmp_f.name, "rb") as fb:
                 return fb.read()
