@@ -1,8 +1,0 @@
-name: GitHub Actions Demo
-on: [push]
-jobs:
-  build:
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Build and push Docker images
-        uses: docker/build-push-action@v2.7.0
