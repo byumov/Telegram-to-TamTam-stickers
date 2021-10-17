@@ -1,9 +1,9 @@
 from setuptools import setup, find_packages
-pkg_name = 'tg_to_tt_stickers'
+PKG_NAME = 'tg_to_tt_stickers'
 
 
 setup(
-    name=pkg_name,
+    name=PKG_NAME,
     packages=find_packages(where="src"),
     install_requires=[
         "webp==0.1.3",

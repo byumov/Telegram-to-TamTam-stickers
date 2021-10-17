@@ -22,5 +22,5 @@ def run():
         print("env var TAMTAM_BOT_TOKEN must be set")
         sys.exit(1)
 
-    b = TamTamBot(tt_token, tg_token)
-    b.run()
+    tt_bot = TamTamBot(tt_token, tg_token)
+    tt_bot.run()

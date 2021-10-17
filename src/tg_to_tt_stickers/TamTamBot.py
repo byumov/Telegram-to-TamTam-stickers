@@ -1,4 +1,3 @@
-
 import logging
 from dataclasses import dataclass
 from time import sleep
@@ -16,7 +15,7 @@ class UploadResult:
     token: str
 
 @dataclass
-class update:
+class Update:
     sender_id: int
     sender_name: str
     sender_username: str
@@ -52,7 +51,7 @@ class TamTamBot():
         print("query_string:", request.query_string)
         print("json:", request.json)
         data = await request.json()
-        u = update(
+        update = Update(
             data['message']['sender']['user_id'],
             data['message']['sender']['name'],
             data['message']['sender']['username'],
@@ -60,9 +59,9 @@ class TamTamBot():
             data['update_type']
         )
 
-        tg_set_name = u.message_text
+        tg_set_name = update.message_text
 
-        self.send_message(u.sender_id, f"Один момент, я уже готовлю архив со стикерами из пака:\n{tg_set_name}: https://t.me/addstickers/{tg_set_name}")
+        self.send_message(update.sender_id, f"Один момент, я уже готовлю архив со стикерами из пака:\n{tg_set_name}: https://t.me/addstickers/{tg_set_name}")
         try:
             self.tg_client.get_sticker_pack_by_name(tg_set_name)
         except StickersSetNotFoundException:
@@ -71,10 +70,10 @@ class TamTamBot():
                     f"Я не нашел в Telegram пак с именем '{tg_set_name}' 😢\n" \
                     "Пришли мне другое имя и попробуем еще разок!\n" \
                     "Узнать имя любимого пака можно в клиенте Telergam, или поискать здесь: https://tlgrm.ru/stickers"
-            self.send_message(u.sender_id, text)
+            self.send_message(update.sender_id, text)
             return web.Response()
 
-        zip_name = self.tg_client.create_tamtam_zip(u.message_text)
+        zip_name = self.tg_client.create_tamtam_zip(update.message_text)
 
         #  send zip to user
         zip_file = self.upload_file(zip_name)
@@ -84,18 +83,21 @@ class TamTamBot():
                 "token": zip_file.token
             }
         }
-        text = "Готово 🥳\nЧтобы создать пак в ТамТам надо еще немного покликать:\n" \
+        text = "Готово 🥳\nЧтобы загрузить пак в ТамТам надо еще немного покликать:\n" \
                 "Пишем боту в одноклассниках(ссылки в ТТ на него нет 🤷‍♂️): https://ok.ru/okstickers\n" \
-                "Делаем все по онструкции от бота okstickers. Примерно так:\n" \
+                "Делаем все по инструкции от бота okstickers. Примерно так:\n" \
                 "- жмем \"Создать новый набор стикеров\"\n" \
                 "- отправляем полученный тут zip со стикерами\n" \
                 "- жмем \"Закончить добавление\"\n" \
-                "- пишем имя, как пак будет называться в ТТ и ОК(удобно называть так же, как оригинал в Telegram)" \
+                "- пишем имя, как пак будет называться в ТТ и ОК(удобно называть так же, как оригинал в Telegram)\n" \
                 "- жмем \"Опубликовать\"\n" \
                 "- ...\n" \
-                "Думаешь, это все? А вот и нет. Чтобы найти свои стикеры надо открыть Одноклассники и открыть любую периписку. Именно там, в Одноклассниках, будет видно новый пак. Скорее же отправьте стикер в любой чат! После этого, можно открыть эту периписку в ТТ и оттуда добавить пак в ТТ. Такие дела. Вот теперь все, можно загружать следующий 🙂"
+                "Думаешь, это все? А вот и нет. Чтобы найти свои стикеры надо открыть Одноклассники " \
+                "и открыть любую периписку. Именно там, в Одноклассниках, будет видно новый пак. " \
+                "Скорее же отправьте стикер в любой чат! После этого, можно открыть эту периписку в ТТ" \
+                " и оттуда добавить пак в ТТ. Такие дела. Вот теперь все, можно загружать следующий 🙂"
 
-        self.send_message(u.sender_id, text, attach=attach)
+        self.send_message(update.sender_id, text, attach=attach)
 
         return web.Response()
 
@@ -128,8 +130,7 @@ class TamTamBot():
             "text": text
         }
         if attach is not None:
-            data['attachments'] = []
-            data['attachments'].append(attach)
+            data['attachments'] = [attach]
 
         not_ok = True
         max_tries = 5
@@ -140,8 +141,8 @@ class TamTamBot():
             if res.status_code == 200:
                 not_ok = False
             # https://dev.tamtam.chat/#operation/sendMessage
-            # It may take time for the server to process your file (audio/video or any binary). 
-            # While a file is not processed you can't attach it. It means the last step will fail with 400 error. 
+            # It may take time for the server to process your file (audio/video or any binary).
+            # While a file is not processed you can't attach it. It means the last step will fail with 400 error.
             # Try to send a message again until you'll get a successful result.
             if res.status_code == 400 and "file.not.processed" in res.json()["message"]:
                 self.log.debug("sleep and retry...")
@@ -161,4 +162,4 @@ class TamTamBot():
     def run(self):
         app = web.Application()
         app.add_routes([web.post('/', self.proceed)])
-        web.run_app(app, port="19999")
+        web.run_app(app, port=19999)

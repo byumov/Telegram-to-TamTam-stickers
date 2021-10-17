@@ -60,10 +60,10 @@ class TGStickerDownloader:
             raise StickersSetNotFoundException("can't get pack from telegram")
         self.log.debug("resp: %s", json.dumps(res))
         stickers = []
-        for s in res['result']['stickers']:
+        for sticker in res['result']['stickers']:
             stickers.append(Sticker(
-                file_id=s['file_id'],
-                emoji=s['emoji'],
+                file_id=sticker['file_id'],
+                emoji=sticker['emoji'],
                 file_bytes=b""
             ))
         return StickersSet(res['result']['name'], res['result']['title'], stickers)
@@ -83,8 +83,8 @@ class TGStickerDownloader:
         resp = requests.Response()  # type: requests.Response
         try:
             resp = requests.get(url, params=params)
-        except requests.RequestException as e:
-            self.log.error("can't send http request to telegram api: %s", e)
+        except requests.RequestException as err:
+            self.log.error("can't send http request to telegram api: %s", err)
         if resp.status_code == 200:
             return resp.json()
         else:
@@ -107,11 +107,11 @@ class TGStickerDownloader:
 
 
     def proceed_sticker(self, sticker: Sticker, tmp_dir : str, pack_name : str, result: list):
-        c = ImageConverter()
+        img_convertor = ImageConverter()
         self.log.info("proceed %s", sticker.file_id)
         st_file = self.get_file(sticker.file_id)
         sticker.file_bytes = self.download_file(st_file.file_path)
-        sticker.file_bytes = c.convert_to_tt_format(sticker.file_bytes)
+        sticker.file_bytes = img_convertor.convert_to_tt_format(sticker.file_bytes)
         rnd_postfix = ''.join(random.choice(ascii_letters) for _ in range(5))
         file_path = f"{tmp_dir}/{pack_name}_{rnd_postfix}.png"
         result.append(file_path)
