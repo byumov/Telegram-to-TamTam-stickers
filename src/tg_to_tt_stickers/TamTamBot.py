@@ -18,8 +18,6 @@ class UploadResult:
 @dataclass
 class Update:
     sender_id: int
-    sender_name: str
-    sender_username: str
     message_text: str
     update_type: str
 
@@ -48,14 +46,15 @@ class TamTamBot():
         return self.api_request("updates")
 
     async def proceed(self, request):
-        print("values:", request.values)
-        print("query_string:", request.query_string)
-        print("json:", request.json)
         data = await request.json()
+        self.log.debug("got from tamtam: %s", data)
+        # TODO: DEBUG:root:got from tamtam: {'chat_id': 16110670307, 'user': {'user_id': , 'name': '', 'username': '', 'is_bot': False, 'last_activity_time': 1634563509000}, 'timestamp': 1634563509012, 'user_locale': 'ru', 'update_type': 'bot_started'}
+
+        if 'message' not in data:
+            return web.Response()
+
         update = Update(
             data['message']['sender']['user_id'],
-            data['message']['sender']['name'],
-            data['message']['sender']['username'],
             data['message']['body']['text'],
             data['update_type']
         )
@@ -74,7 +73,13 @@ class TamTamBot():
             self.send_message(update.sender_id, text)
             return web.Response()
 
-        zip_names = self.tg_client.create_tamtam_zip(update.message_text)
+        try:
+            zip_names = self.tg_client.create_tamtam_zip(update.message_text)
+        except Exception as err:
+            self.log.error("error: %s", err)
+            self.send_message(update.sender_id, "Извини, что-то пошло не так 😢\nПопробуй другой пак. Анимированные пока что не поддерживаются, но будут позже.\n" \
+                                                "Замуть меня, если эти сообщения не перестают приходить. Я еще молод и скоро все будет лучше 😉")
+            return web.Response()
 
         #  send zip to user
         zip_files = self.upload_files(zip_names)
