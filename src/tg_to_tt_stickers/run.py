@@ -4,7 +4,7 @@ import sys
 
 from .TamTamBot import TamTamBot
 
-logging.basicConfig()
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger()
 logging.getLogger('PIL').setLevel(logging.INFO)
 logging.getLogger('urllib3').setLevel(logging.INFO)
@@ -21,6 +21,6 @@ def run():
     if tt_token is None:
         print("env var TAMTAM_BOT_TOKEN must be set")
         sys.exit(1)
-
+    log.info("starting bot...")
     tt_bot = TamTamBot(tt_token, tg_token)
     tt_bot.run()
