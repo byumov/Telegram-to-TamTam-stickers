@@ -7,6 +7,7 @@ from multiprocessing.dummy import Pool
 from string import ascii_letters
 from tempfile import TemporaryDirectory
 from typing import List
+from typing import Optional
 
 import requests
 
@@ -17,10 +18,6 @@ TELEGRAM_API_BASE_URL = "https://api.telegram.org"
 
 class TGStickerDownloaderException(Exception):
     pass
-
-class StickersSetNotFoundException(TGStickerDownloaderException):
-    pass
-
 
 @dataclass
 class Sticker:
@@ -34,12 +31,13 @@ class StickersSet:
     title: str
     stickers: List[Sticker]
 
-@dataclass
+
+@dataclass()
 class TGFile:
     file_id: str
     file_unique_id: str 
     file_size: int
-    file_path: str
+    file_path: str # stickers/file_81.webp
 
 
 
@@ -51,13 +49,13 @@ class TGStickerDownloader:
         self.log = logging.getLogger()
         self.log.setLevel(logging.DEBUG)
 
-    def get_sticker_pack_by_name(self, name) -> StickersSet:
+    def get_sticker_pack_by_name(self, name) -> Optional[StickersSet]:
         method = "getStickerSet"
         try:
             res = self.api_request(method, params={"name": name})
         #  TODO: better exceptions and error messages
         except Exception:
-            raise StickersSetNotFoundException("can't get pack from telegram")
+            return None
         self.log.debug("resp: %s", json.dumps(res))
         stickers = []
         for sticker in res['result']['stickers']:
@@ -68,7 +66,7 @@ class TGStickerDownloader:
             ))
         return StickersSet(res['result']['name'], res['result']['title'], stickers)
 
-    def get_file(self, file_id) -> TGFile:
+    def get_sticker_file(self, file_id) -> TGFile:
         method = "getFile"
         res = self.api_request(method, {"file_id": file_id})['result']
         return TGFile(res['file_id'], res['file_unique_id'], res['file_size'], res['file_path'])
@@ -91,24 +89,23 @@ class TGStickerDownloader:
             raise TGStickerDownloaderException(f"telegram API error, status code: {resp.status_code}, text: {resp.text}")
 
     @classmethod
-    def chunks(cls, lst, n):
+    def chunks(cls, lst, number_of_chunks):
         """Yield successive n-sized chunks from lst."""
-        for i in range(0, len(lst), n):
-            yield lst[i:i + n]
+        for i in range(0, len(lst), number_of_chunks):
+            yield lst[i:i + number_of_chunks]
 
-    def create_tamtam_zip(self, tg_set_name: str) -> 'List[str]':
+    def create_tamtam_zip(self, tg_set: StickersSet) -> 'List[str]':
         """return path to zip archive with stickers in TamTam format"""
-        s_set = self.get_sticker_pack_by_name(tg_set_name)
-        p = Pool(10)
+        pool = Pool(10)
         result_files = []  # type: List[str]
-        with TemporaryDirectory(suffix=s_set.name) as tmpdir:
-            p.starmap(self.proceed_sticker,  [(x, tmpdir, s_set.name, result_files) for x in s_set.stickers])
+        with TemporaryDirectory(suffix=tg_set.name) as tmpdir:
+            pool.starmap(self.proceed_sticker,  [(x, tmpdir, tg_set.name, result_files) for x in tg_set.stickers])
             result_zip_names = []
 
             parts = self.chunks(result_files, 50)
             part_n = 0
             for part in parts:
-                zip_name = f"{s_set.name}_{part_n}.zip"
+                zip_name = f"{tg_set.name}_{part_n}.zip"
                 part_n += 1
                 with zipfile.ZipFile(zip_name, "w") as zf:
                     for sticker_file in part:
@@ -120,12 +117,19 @@ class TGStickerDownloader:
 
     def proceed_sticker(self, sticker: Sticker, tmp_dir : str, pack_name : str, result: list):
         img_convertor = ImageConverter()
-        self.log.info("proceed %s", sticker.file_id)
-        st_file = self.get_file(sticker.file_id)
+        self.log.debug("proceed sticker: %s", sticker)
+        st_file = self.get_sticker_file(sticker.file_id)
+        self.log.debug("proceed st_file %s", st_file)
         sticker.file_bytes = self.download_file(st_file.file_path)
-        sticker.file_bytes = img_convertor.convert_to_tt_format(sticker.file_bytes)
+
         rnd_postfix = ''.join(random.choice(ascii_letters) for _ in range(5))
-        file_path = f"{tmp_dir}/{pack_name}_{rnd_postfix}.png"
+        if st_file.file_path.endswith("tgs"):
+            self.log.debug("it's a tgs file, do not convert")
+            file_path = f"{tmp_dir}/{pack_name}_{rnd_postfix}.tgs"
+        else:
+            sticker.file_bytes = img_convertor.convert_to_tt_format(sticker.file_bytes)
+            file_path = f"{tmp_dir}/{pack_name}_{rnd_postfix}.png"
+
         result.append(file_path)
         with open(file_path, "wb") as fb:
             fb.write(sticker.file_bytes)

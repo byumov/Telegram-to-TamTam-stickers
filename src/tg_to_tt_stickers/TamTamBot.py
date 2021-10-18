@@ -7,7 +7,7 @@ from typing import List
 import requests
 from aiohttp import web
 
-from .TelegramStickerDownloader import (StickersSetNotFoundException, TGStickerDownloader)
+from .TelegramStickerDownloader import TGStickerDownloader
 
 
 @dataclass
@@ -16,10 +16,30 @@ class UploadResult:
     token: str
 
 @dataclass
-class Update:
-    sender_id: int
-    message_text: str
-    update_type: str
+class User:
+    user_id: int
+    name: str
+    username: str
+
+@dataclass
+class MessageBody:
+    text: str
+
+@dataclass
+class Message:
+    sender: User
+    body: MessageBody
+# user add the bot first time
+@dataclass
+class UpdateBotStarted:
+    chat_id: int
+    user: User
+
+
+# user send a message to bot
+@dataclass
+class UpdateMessageCreated:
+    message: Message
 
 class TamTamBot():
 
@@ -45,40 +65,59 @@ class TamTamBot():
     def get_updates(self):
         return self.api_request("updates")
 
-    async def proceed(self, request):
-        data = await request.json()
-        self.log.debug("got from tamtam: %s", data)
-        # TODO: DEBUG:root:got from tamtam: {'chat_id': 16110670307, 'user': {'user_id': , 'name': '', 'username': '', 'is_bot': False, 'last_activity_time': 1634563509000}, 'timestamp': 1634563509012, 'user_locale': 'ru', 'update_type': 'bot_started'}
+    def proceed_bot_started(self, data):
+        update = UpdateBotStarted(
+            data['chat_id'],
+            User(
+                data['user']['user_id'],
+                data['user'].get('name', ""),
+                data['user'].get('username', ""),
+            )
+        )
+        self.send_message(update.user.user_id, 
+                            "Привет 👋\nЯ помогу скачать твой любимый набор стикеров "
+                            "из Telegram и расскажу, как загрузить его в TamTam\n" \
+                            "Просто пришли мне имя стикер-пака\n")
+        return web.Response()
 
-        if 'message' not in data:
+    def proceed_message_created(self, data):
+        if 'sender' not in data['message']:
+            self.log.error("got bad update: %s", data)
             return web.Response()
-
-        update = Update(
-            data['message']['sender']['user_id'],
-            data['message']['body']['text'],
-            data['update_type']
+        update = UpdateMessageCreated(
+            Message(
+                User(
+                    data['message']['sender']['user_id'],
+                    data['message']['sender']['name'],
+                    data['message']['sender'].get('username', "")
+                ),
+                MessageBody(data['message']['body'].get("text", ""))
+            )
         )
 
-        tg_set_name = update.message_text
+        tg_set_name = update.message.body.text
 
-        self.send_message(update.sender_id, f"Один момент, я уже готовлю архив со стикерами из пака:\n{tg_set_name}: https://t.me/addstickers/{tg_set_name}")
-        try:
-            self.tg_client.get_sticker_pack_by_name(tg_set_name)
-        except StickersSetNotFoundException:
-            text = "Привет! Я могу скачать твой любимый набор стикеров с Telegram и помогу загрузить их в TamTam\n" \
-                    "Просто пришли мне имя пака.\n" \
-                    f"Я не нашел в Telegram пак с именем '{tg_set_name}' 😢\n" \
-                    "Пришли мне другое имя и попробуем еще разок!\n" \
-                    "Узнать имя любимого пака можно в клиенте Telergam, или поискать здесь: https://tlgrm.ru/stickers"
-            self.send_message(update.sender_id, text)
+        tg_set = self.tg_client.get_sticker_pack_by_name(tg_set_name)
+        if tg_set is None:
+            self.send_message(update.message.sender.user_id,
+                                f"Я не нашел в Telegram пак с именем '{tg_set_name}' 😢\n" \
+                                "Пришли мне другое имя и попробуем еще разок!\n" \
+                                "Узнать имя любимого пака можно в клиенте Telergam, "
+                                "или поискать здесь: https://tlgrm.ru/stickers\n" \
+                                "")
             return web.Response()
 
+        self.send_message(update.message.sender.user_id, 
+                            f"Один момент, я уже готовлю архив со стикерами из пака:\n{tg_set_name}: "
+                            f"https://t.me/addstickers/{tg_set_name}")
         try:
-            zip_names = self.tg_client.create_tamtam_zip(update.message_text)
+            zip_names = self.tg_client.create_tamtam_zip(tg_set)
+        #  TODO: better except
         except Exception as err:
-            self.log.error("error: %s", err)
-            self.send_message(update.sender_id, "Извини, что-то пошло не так 😢\nПопробуй другой пак. Анимированные пока что не поддерживаются, но будут позже.\n" \
-                                                "Замуть меня, если эти сообщения не перестают приходить. Я еще молод и скоро все будет лучше 😉")
+            self.log.error("error while proceed pack %s: %s",tg_set, err)
+            self.send_message(update.message.sender.user_id, 
+                            "Извини, что-то пошло не так 😢\nПопробуй другой пак.\n" \
+                            "Замуть меня, если эти сообщения не перестают приходить. Я еще молод и скоро все будет лучше 😉")
             return web.Response()
 
         #  send zip to user
@@ -92,30 +131,42 @@ class TamTamBot():
                 }
             })
 
-        text = "Готово 🥳\nЧтобы загрузить пак в ТамТам надо еще немного покликать:\n" \
-                "Пишем боту в одноклассниках(ссылки в ТТ на него нет 🤷‍♂️): https://ok.ru/okstickers\n" \
-                "Делаем все по инструкции от бота okstickers. Примерно так:\n" \
-                "- жмем \"Создать новый набор стикеров\"\n" \
-                "- отправляем полученный тут zip со стикерами\n" \
-                "- жмем \"Закончить добавление\"\n" \
-                "- пишем имя, как пак будет называться в ТТ и ОК(удобно называть так же, как оригинал в Telegram)\n" \
-                "- жмем \"Опубликовать\"\n" \
+        text = "Готово 🥳\nЧтобы загрузить пак в ТамТам надо сделать еще пару кликов:\n" \
+                "Пишем боту: https://tt.me/stickers\n" \
+                "Делаем все по инструкции от бота. Примерно так:\n" \
+                "- создать новый пак\n" \
+                "- отправить полученный тут zip со стикерами, бот ответит, что все ок\n" \
+                "- если архивов несколько - загрузить следующий\n" \
                 "- ...\n" \
-                "Думаешь, это все? А вот и нет. Чтобы найти свои стикеры надо открыть Одноклассники " \
-                "и открыть любую периписку. Именно там, в Одноклассниках, будет видно новый пак. " \
-                "Скорее же отправьте стикер в любой чат! После этого, можно открыть эту периписку в ТТ" \
-                " и оттуда добавить пак в ТТ. Такие дела. Вот теперь все, можно загружать следующий 🙂"
+                "- PROFIT!\n"
 
         if len(attachments) == 1:
-            self.send_message(update.sender_id, text, attachments=attachments)
+            self.send_message(update.message.sender.user_id, text, attachments=attachments)
         else:
-            self.send_message(update.sender_id, text)
-            self.send_message(update.sender_id, "Тебе не певезло, в Telegram паке больше 50-ти стикеров.\n"\
-                "ТамТам не разрешает загрузить в одном архиве больше 50 штук.\n"
-                "Я пришлю несколько архивов, их нужно будет отправить okstickers боту по очереди, когда он скажет, что переварил первый кусок")
+            self.send_message(update.message.sender.user_id, text)
+            self.send_message(update.message.sender.user_id, "Тебе немного не повезло, в исходном Telegram паке больше 50-ти стикеров.\n"\
+                "ТамТам разрешает загрузить до 50 штук в одном архиве.\n"
+                "Я пришлю несколько архивов, их нужно будет отправить боту (https://tt.me/stickers) по очереди, дожидаясь обработки предыдушего.")
             for attach in attachments:
-                self.send_message(update.sender_id, "", attachments=[attach])
+                self.send_message(update.message.sender.user_id, "", attachments=[attach])
 
+        return web.Response()
+
+    async def proceed(self, request):
+        data = await request.json()
+        self.log.debug("got update from tamtam api: %s", data)
+
+        if 'update_type' not in data:
+            self.log.error("bad update without type: %s", data)
+            return web.Response()
+
+        if data['update_type'] == 'bot_started':
+            self.proceed_bot_started(data)
+
+        elif data['update_type'] == 'message_created':
+            self.proceed_message_created(data)
+
+        self.log.error("got unknown update type: %s", data)
         return web.Response()
 
 
@@ -171,14 +222,13 @@ class TamTamBot():
                 max_tries -= 1
                 sleep_time += 1
                 if max_tries == 0:
-                    self.send_message(user_id, "Не получилось загрузить файл в ТамТам, попробуйте еще раз позже")
-                    web.Response()
+                    self.send_message(user_id, "Не получилось загрузить файл в ТамТам, попробуй еще раз позже")
+                    return web.Response()
                 continue
 
             if res.status_code != 200:
                 self.log.error("can't send msg to user %s, statis: %s %s", user_id, res.status_code, res.text)
-
-        self.log.debug("msg was sent")
+                return web.Response()
 
     def run(self):
         app = web.Application()
