@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-from .TamTamBot import TamTamBot
+from .tt_bot import TamTamBot
 
 logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s')
 log = logging.getLogger()

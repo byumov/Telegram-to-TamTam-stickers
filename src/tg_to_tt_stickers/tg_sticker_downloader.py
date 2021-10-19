@@ -6,15 +6,13 @@ from dataclasses import dataclass
 from multiprocessing.dummy import Pool
 from string import ascii_letters
 from tempfile import TemporaryDirectory
-from typing import List
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
-from .ImageConverter import ImageConverter
+from .image_converter import ImageConverter
 
 TELEGRAM_API_BASE_URL = "https://api.telegram.org"
-
 
 class TGStickerDownloaderException(Exception):
     pass
@@ -31,15 +29,12 @@ class StickersSet:
     title: str
     stickers: List[Sticker]
 
-
 @dataclass()
 class TGFile:
     file_id: str
     file_unique_id: str 
     file_size: int
     file_path: str # stickers/file_81.webp
-
-
 
 class TGStickerDownloader:
 
@@ -99,7 +94,7 @@ class TGStickerDownloader:
         pool = Pool(10)
         result_files = []  # type: List[str]
         with TemporaryDirectory(suffix=tg_set.name) as tmpdir:
-            pool.starmap(self.proceed_sticker,  [(x, tmpdir, tg_set.name, result_files) for x in tg_set.stickers])
+            pool.starmap(self.proceed_sticker, [(x, tmpdir, tg_set.name, result_files) for x in tg_set.stickers])
             result_zip_names = []
 
             parts = self.chunks(result_files, 50)
