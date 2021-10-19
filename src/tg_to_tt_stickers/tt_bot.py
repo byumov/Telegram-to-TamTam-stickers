@@ -2,12 +2,22 @@ import logging
 from dataclasses import dataclass
 from time import sleep
 import os
-from typing import List
+from typing import List, TypedDict
 
 import requests
 from aiohttp import web
 
-from .TelegramStickerDownloader import TGStickerDownloader
+from .text_messages import MSG_ERROR, MSG_SET_IN_PROGRESS, MSG_SET_NOT_FOUND, \
+                           MSG_SUCCESS, MSG_WELCOME, MSG_MANY_STICKERS
+from .tg_sticker_downloader import TGStickerDownloader
+
+class _MessageDictBase(TypedDict):
+    text: str
+
+
+class MessageDict(_MessageDictBase, total=False):
+    attachments: List
+    format: str
 
 
 @dataclass
@@ -74,10 +84,7 @@ class TamTamBot():
                 data['user'].get('username', ""),
             )
         )
-        self.send_message(update.user.user_id, 
-                            "Привет 👋\nЯ помогу скачать твой любимый набор стикеров "
-                            "из Telegram и расскажу, как загрузить его в TamTam\n" \
-                            "Просто пришли мне имя стикер-пака\n")
+        self.send_message(update.user.user_id, MSG_WELCOME)
         return web.Response()
 
     def proceed_message_created(self, data):
@@ -100,24 +107,16 @@ class TamTamBot():
         tg_set = self.tg_client.get_sticker_pack_by_name(tg_set_name)
         if tg_set is None:
             self.send_message(update.message.sender.user_id,
-                                f"Я не нашел в Telegram пак с именем '{tg_set_name}' 😢\n" \
-                                "Пришли мне другое имя и попробуем еще разок!\n" \
-                                "Узнать имя любимого пака можно в клиенте Telergam, "
-                                "или поискать здесь: https://tlgrm.ru/stickers\n" \
-                                "")
+                              MSG_SET_NOT_FOUND.format(tg_set_name=tg_set_name), use_markdown=True)
             return web.Response()
 
-        self.send_message(update.message.sender.user_id, 
-                            f"Один момент, я уже готовлю архив со стикерами из пака:\n{tg_set_name}: "
-                            f"https://t.me/addstickers/{tg_set_name}")
+        self.send_message(update.message.sender.user_id, MSG_SET_IN_PROGRESS.format(tg_set_name=tg_set_name))
         try:
             zip_names = self.tg_client.create_tamtam_zip(tg_set)
         #  TODO: better except
         except Exception as err:
             self.log.error("error while proceed pack %s: %s",tg_set, err)
-            self.send_message(update.message.sender.user_id, 
-                            "Извини, что-то пошло не так 😢\nПопробуй другой пак.\n" \
-                            "Замуть меня, если эти сообщения не перестают приходить. Я еще молод и скоро все будет лучше 😉")
+            self.send_message(update.message.sender.user_id, MSG_ERROR)
             return web.Response()
 
         #  send zip to user
@@ -131,22 +130,11 @@ class TamTamBot():
                 }
             })
 
-        text = "Готово 🥳\nЧтобы загрузить пак в ТамТам надо сделать еще пару кликов:\n" \
-                "Пишем боту: https://tt.me/stickers\n" \
-                "Делаем все по инструкции от бота. Примерно так:\n" \
-                "- создать новый пак\n" \
-                "- отправить полученный тут zip со стикерами, бот ответит, что все ок\n" \
-                "- если архивов несколько - загрузить следующий\n" \
-                "- ...\n" \
-                "- PROFIT!\n"
-
         if len(attachments) == 1:
-            self.send_message(update.message.sender.user_id, text, attachments=attachments)
+            self.send_message(update.message.sender.user_id, MSG_SUCCESS, attachments=attachments)
         else:
-            self.send_message(update.message.sender.user_id, text)
-            self.send_message(update.message.sender.user_id, "Тебе немного не повезло, в исходном Telegram паке больше 50-ти стикеров.\n"\
-                "ТамТам разрешает загрузить до 50 штук в одном архиве.\n"
-                "Я пришлю несколько архивов, их нужно будет отправить боту (https://tt.me/stickers) по очереди, дожидаясь обработки предыдушего.")
+            self.send_message(update.message.sender.user_id, MSG_SUCCESS)
+            self.send_message(update.message.sender.user_id, MSG_MANY_STICKERS)
             for attach in attachments:
                 self.send_message(update.message.sender.user_id, "", attachments=[attach])
 
@@ -192,17 +180,20 @@ class TamTamBot():
         return upload_results
 
 
-    def send_message(self, user_id: int, text: str, attachments: list=None, no_link_preview=True):
+    def send_message(self, user_id: int, text: str, attachments: list=None,
+                     no_link_preview=True, use_markdown=False):
         param = {
             "access_token": self.token,
             "user_id": user_id,
             "disable_link_preview": no_link_preview
         }
-        data = {
+        data :MessageDict = {
             "text": text
         }
         if attachments is not None:
             data['attachments'] = attachments
+        if use_markdown:
+            data['format'] = 'markdown'
 
         not_ok = True
         max_tries = 5
@@ -217,12 +208,12 @@ class TamTamBot():
             # While a file is not processed you can't attach it. It means the last step will fail with 400 error.
             # Try to send a message again until you'll get a successful result.
             if res.status_code == 400 and "file.not.processed" in res.json()["message"]:
-                self.log.debug("sleep and retry...")
+                self.log.debug("files not ready, sleep and retry...")
                 sleep(sleep_time)
                 max_tries -= 1
                 sleep_time += 1
                 if max_tries == 0:
-                    self.send_message(user_id, "Не получилось загрузить файл в ТамТам, попробуй еще раз позже")
+                    self.send_message(user_id, "Не получилось загрузить файл в ТамТам, попробуй еще раз")
                     return web.Response()
                 continue
 
