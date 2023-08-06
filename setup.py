@@ -22,7 +22,7 @@ setup(
     packages=find_packages(where="src"),
     install_requires=[
         "webp==0.1.3",
-        "pillow==9.0.1",
+        "pillow==9.3.0",
         "requests==2.25.1",
         "aiohttp==3.8.1",
     ],
